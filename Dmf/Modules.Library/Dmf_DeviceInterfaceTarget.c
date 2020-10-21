@@ -1398,11 +1398,41 @@ Return Value:
         moduleContext->ModuleCloseReason = ModuleCloseReason_NotSet;
 
         ntStatus = DeviceInterfaceTarget_TargetGet(Context);
+
+        // All work associated with this path is done in the QueryRemove/RemoveComplete path.
+        // 
+        TraceEvents(TRACE_LEVEL_INFORMATION, DMF_TRACE, "Interface Notification: ARRIVAL");
     }
     else if (Action == CM_NOTIFY_ACTION_DEVICEINTERFACEREMOVAL)
     {
-        // NOTE: Module has already been closed via RemoveComplete.
+        // NOTE: Targets are not closed by when underlying driver disables device interface.
         //
+
+        // All work associated with this path is done in the QueryRemove/RemoveComplete path.
+        // 
+        TraceEvents(TRACE_LEVEL_INFORMATION, DMF_TRACE, "Interface Notification: REMOVAL");
+
+        // NOTE: This option is provided for older drivers that expected this behavoir. New drivers should
+        //       not use this option.
+        //
+        if (moduleConfig->CloseUnderlyingTargetOnDeviceInterfaceDisable)
+        {
+            // If any arrival/remove path code is executing the fact that the driver is closing is remembered. 
+            // After the target arrival/removal operation finishes, the Module is closed gracefully.
+            //
+            if (DeviceInterfaceTarget_ModuleCloseReasonSet(dmfModule,
+                                                           ModuleCloseReason_NotificationUnregister) == ModuleCloseReason_NotificationUnregister)
+            {
+                // Module has not started closing yet. If the Module is Open, Close it.
+                // It is safe to check this handle because no other path can modify it.
+                // Arrival cannot happen because notification handler is unregistered.
+                //
+                if (moduleContext->IoTarget != NULL)
+                {
+                    DeviceInterfaceTarget_StreamStopAndModuleClose(dmfModule);
+                }
+            }
+        }
     }
 
     return (DWORD)ntStatus;
@@ -1470,7 +1500,7 @@ Return Value:
     if (DMF_Utility_IsEqualGUID((LPGUID)&(deviceInterfaceChangeNotification->Event),
                                 (LPGUID)&GUID_DEVICE_INTERFACE_ARRIVAL))
     {
-        TraceEvents(TRACE_LEVEL_INFORMATION, DMF_TRACE, "Arrival Interface Notification.");
+        TraceEvents(TRACE_LEVEL_INFORMATION, DMF_TRACE, "Interface Notification: ARRIVAL");
 
         // WARNING: If the caller specifies PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
         // the operating system might call the PnP notification callback routine twice for a single
@@ -1552,9 +1582,34 @@ Return Value:
     else if (DMF_Utility_IsEqualGUID((LPGUID)&(deviceInterfaceChangeNotification->Event),
                                      (LPGUID)&GUID_DEVICE_INTERFACE_REMOVAL))
     {
+        // NOTE: Targets are not closed by when underlying driver disables device interface.
+        //
+
         // All work associated with this path is done in the QueryRemove/RemoveComplete path.
         // 
-        TraceEvents(TRACE_LEVEL_INFORMATION, DMF_TRACE, "Removal Interface Notification.");
+        TraceEvents(TRACE_LEVEL_INFORMATION, DMF_TRACE, "Interface Notification: REMOVAL");
+
+        // NOTE: This option is provided for older drivers that expected this behavoir. New drivers should
+        //       not use this option.
+        //
+        if (moduleConfig->CloseUnderlyingTargetOnDeviceInterfaceDisable)
+        {
+            // If any arrival/remove path code is executing the fact that the driver is closing is remembered. 
+            // After the target arrival/removal operation finishes, the Module is closed gracefully.
+            //
+            if (DeviceInterfaceTarget_ModuleCloseReasonSet(dmfModule,
+                                                           ModuleCloseReason_NotificationUnregister) == ModuleCloseReason_NotificationUnregister)
+            {
+                // Module has not started closing yet. If the Module is Open, Close it.
+                // It is safe to check this handle because no other path can modify it.
+                // Arrival cannot happen because notification handler is unregistered.
+                //
+                if (moduleContext->IoTarget != NULL)
+                {
+                    DeviceInterfaceTarget_StreamStopAndModuleClose(dmfModule);
+                }
+            }
+        }
     }
     else
     {
